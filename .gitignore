@@ -1,0 +1,13 @@
+# virtual environments
+/env
+/venv
+/datasets
+
+# mac stuff
+*DS_Store
+
+# YOLO models
+*yolov8x.pt
+
+# test images
+Strike zone overlay/test_images/
