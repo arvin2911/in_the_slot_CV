@@ -37,11 +37,12 @@ def home():
             file_path = os.path.join(app.config['UPLOAD_FOLDER'], filename) # Obtain file path 
             file.save(file_path) # Save file into destination folder
             
+            #TODO: need to return the result.html with the interactive plot html in demo.py
             # Run the Python file with the uploaded video file as input
             # output = execute_python_script(file_path)
-            output = demo.process_video(file_path)
-            
-            return render_template('result.html', output=output)
+            # output = demo.process_video(file_path)
+        
+            # return render_template('result.html', output=output)
         else:
             return "Invalid file format. Only video files allowed."
     return render_template('index.html', form=form)

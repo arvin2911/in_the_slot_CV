@@ -19,6 +19,7 @@ import dill
 import ipywidgets as widgets
 import sys
 import os
+import mpld3
 
 # Run calibration sequence
 def is_orange(image, x1, y1, x2, y2, lower_orange, upper_orange, color_threshold=0.5):
@@ -450,17 +451,24 @@ plt.show()
 # plt.rcParams['savefig.facecolor']='white'
 # plt.savefig('3d_strikezone_image',bbox_inches="tight")
 
-# Process the video and return the processed video's path
-def process_video(video_path):
-    # saved directory path
-    DEST_DIR = "static/results"
-    SAVED_DIR = "yoohoo"
-    filename = os.path.basename(video_path)
+# TODO: return the plot_path to app.py so it can return it as result.html
+# Save the interactive plot as an HTML file in the static folder
+plot_path = 'static/results/interactive_plot.html'
+mpld3.save_html(fig, plot_path)
 
-    # Predict with model
-    results = model.predict(video_path, save=True, project=DEST_DIR, name=SAVED_DIR, exist_ok=True)
+
+
+# Process the video and return the processed video's path
+# def process_video(video_path):
+#     # saved directory path
+#     DEST_DIR = "static/results"
+#     SAVED_DIR = "yoohoo"
+#     filename = os.path.basename(video_path)
+
+#     # Predict with model
+#     results = model.predict(video_path, save=True, project=DEST_DIR, name=SAVED_DIR, exist_ok=True)
     
-    return os.path.join(DEST_DIR,SAVED_DIR,filename)   # return the video path
+#     return os.path.join(DEST_DIR,SAVED_DIR,filename)   # return the video path
 
 
 
