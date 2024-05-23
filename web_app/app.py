@@ -4,7 +4,9 @@ from wtforms import FileField, SubmitField
 from werkzeug.utils import secure_filename 
 import os
 import subprocess
-import EE399_MNIST
+
+import demo
+
 # import pickle
 # import numpy as np
 
@@ -37,26 +39,12 @@ def home():
             
             # Run the Python file with the uploaded video file as input
             # output = execute_python_script(file_path)
-            output = EE399_MNIST.process_video(file_path)
+            output = demo.process_video(file_path)
             
             return render_template('result.html', output=output)
         else:
             return "Invalid file format. Only video files allowed."
     return render_template('index.html', form=form)
-
-# @app.route('/predict',methods=['POST','GET'])
-# def predict():
-#     int_features=[int(x) for x in request.form.values()]
-#     final=[np.array(int_features)]
-#     print(int_features)
-#     print(final)
-#     prediction=model.predict_proba(final)
-#     output='{0:.{1}f}'.format(prediction[0][1], 2)
-
-#     if output>str(0.5):
-#         return render_template('forest_fire.html',pred='Your Forest is in Danger.\nProbability of fire occuring is {}'.format(output),bhai="kuch karna hain iska ab?")
-#     else:
-#         return render_template('forest_fire.html',pred='Your Forest is safe.\n Probability of fire occuring is {}'.format(output),bhai="Your Forest is Safe for now")
 
 # checks if the file has the allowed extension or type
 def allowed_file(filename):
