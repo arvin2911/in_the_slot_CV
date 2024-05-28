@@ -21,6 +21,9 @@ import sys
 import os
 import mpld3
 
+
+## DEFINE FUNCTIONS 
+
 # Run calibration sequence
 def is_orange(image, x1, y1, x2, y2, lower_orange, upper_orange, color_threshold=0.5):
     roi = image[y1:y2, x1:x2]
@@ -48,7 +51,7 @@ def meters_to_inches(meters):
     return meters * 39.3701  
 
 # Calculates the depth estimation of baseball/pingpongs in an image/frame of a video
-def process_image(image_path):
+def process_image(image_path, model, fx, fy, cx, cy):
     # Load the image with OpenCV
     current_frame = cv2.imread(image_path)
     
@@ -106,11 +109,80 @@ def process_image(image_path):
                 # cv2.circle(current_frame, (int(x),int(y)), radius=5, color=(0, 0, 255), thickness=-1)
                         
     # Display the modified frame with bounding boxes
-    cv2.imshow("Detected Baseball", current_frame)
-    cv2.waitKey(0)  # Wait for a key press to close
-    cv2.destroyAllWindows()
-    cv2.waitKey(1)
+    # cv2.imshow("Detected Baseball", current_frame)
+    # cv2.waitKey(0)  # Wait for a key press to close
+    # cv2.destroyAllWindows()
+    # cv2.waitKey(1)
+    # cv2.imwrite('detected_balls.jpg',current_frame)
+    
+    return points
+
+# Processes the baseball image in a given image/frame in a video
+def process_image_baseball(image_path, model, fx, fy, cx, cy):
+    # Load the image with OpenCV
+    current_frame = cv2.imread(image_path)
+    
+    # Ensure the image was loaded
+    if current_frame is None:
+        print(f"Failed to load image {image_path}")
+        return
+    
+    # Predict using the model for baseball class (class_id 32)
+    results = model.predict(current_frame,classes = [32], conf=0.1)
+   # points list to return
+    points = []
+
+    # Iterate through the results
+    for result in results:
+        boxes = result.boxes
+
+        if boxes.conf.size(0) > 0:
+            # There are detections
+            for i in range(boxes.xyxy.size(0)): # For each detection
+                # Extract bounding box coordinates
+                x1, y1, x2, y2 = map(int, boxes.xyxy[i].tolist())
+                # Calculate the diameter of the baseball (approximation)
+                d_pix = ((x2 - x1) + (y2 - y1)) / 2
+                print('diameter pixel ball = ')
+                print(d_pix)
+                # Filter for size
+#                 lower_orange = np.array([0, 0, 200])
+#                 upper_orange = np.array([180, 50, 255])
+                # if d_pix < 30:
+                #     continue
+                # Draw rectangle around the baseball
+                print('diameter pixel ball < 30')
+                cv2.rectangle(current_frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
+                print('after cv2 draw rect')
+                print(f"num detections: {len(boxes)}, x1: {x1} y1: {y1} x2: {x2} y2: {y2}")
+
+
+                print(f"Diameter of baseball in pixels: {d_pix}")
+
+                # get midpoint of the ball in the image (pixels)
+                y = y1 + (y2 - y1) / 2
+                x = x1 + (x2 - x1) / 2
+                print(f"{x} {y}")
+                print(x)
+                # calculate real-world depth
+                X, Y, Z = convert_to_real_world_coordinates(x, y, d_pix, fx, fy, cx, cy, 0.075)
+                points.append((meters_to_inches(X), meters_to_inches(Y), meters_to_inches(Z)))
+                print(f"Real-world coordinates. X:{X} Y:{Y} Z:{Z}")
+                # cv2.putText(current_frame, f"Real world coordinates:", (x1, y1-500), cv2.FONT_HERSHEY_SIMPLEX, 2, (0, 255, 0), 2)
+                cv2.putText(current_frame, f"Point: {len(points) - 1}", (int(x), int(y)), cv2.FONT_HERSHEY_SIMPLEX, 2, (0, 255, 0), 2)
+                # cv2.putText(current_frame, f"X:{X}", (x1, y1-300), cv2.FONT_HERSHEY_SIMPLEX, 2, (0, 255, 0), 2)
+                # cv2.putText(current_frame, f"Y:{Y}", (x1, y1-200), cv2.FONT_HERSHEY_SIMPLEX, 2, (0, 255, 0), 2)
+                # cv2.putText(current_frame, f"Z:{Z}", (x1, y1-100), cv2.FONT_HERSHEY_SIMPLEX, 2, (0, 255, 0), 2)
+                # cv2.circle(current_frame, (int(x),int(y)), radius=5, color=(0, 0, 255), thickness=-1)
+                        
+    # Display the modified frame with bounding boxes
+    # cv2.imshow("Detected Baseball", current_frame)
+    # cv2.waitKey(0)  # Wait for a key press to close
+    # cv2.destroyAllWindows()
+    # cv2.waitKey(1)
     cv2.imwrite('detected_balls.jpg',current_frame)
+    
+    
     
     return points
 
@@ -140,8 +212,6 @@ def compute_mse_for_point(point_index, distance_matrix, expected_distances):
 #               \   /
 #                \ /
 #                 0 (Front of the plate)
-
-# Determines the home plate corners of the given pingpong indexes
 def determine_plate_corners(points, distance_matrix, front_tip_index):
     # check for only 5 points
     if len(distance_matrix) != 5:
@@ -187,6 +257,7 @@ def determine_plate_corners(points, distance_matrix, front_tip_index):
     else:
         print("Left-handed batter (batter is on the right side of plate)")
         return [front_tip_index, closest_point_index, closest_side_back_point_index, further_side_back_point_index, further_point_index]
+    
 
 # Reorders the pingpong index to match the homeplate point configuration
 def order_homeplate_points(frame, points, pingpong_id=80):
@@ -230,8 +301,9 @@ def order_homeplate_points(frame, points, pingpong_id=80):
     print("Identified corners:", corners)
     return corners,[points[corners[0]], points[corners[1]], points[corners[2]], points[corners[3]], points[corners[4]]]
 
+
 # Build the strike zone
-def build_zone(world_coordinate_list,expected_distances):
+def build_zone(world_coordinate_list):
     #The world coordinate list should be ordered as follows: The 1st entry should be the position of the ball that is at the back (the point) of the plate, from there, 
     #rotate counterclockwise until every ball on the plate is accounted for. The sixth entry will be the lower bound for the zone, the seventh entry will be the upper bound of the zone
     #We're also going to average over the coordinates of the corners of the zone to mitigate errors in strike zone dimensions
@@ -328,14 +400,15 @@ def draw_pentagonal_prism(ax, zone_bounds,zone_dims_dict,center=(0, 0, 0)):
     #      [size * np.cos(2 * np.pi * i / 5), size * np.sin(2 * np.pi * i / 5), 0] for i in range(5)
     #  ])
     vertices_base = np.array([
-     [zone_bounds[i][0], zone_bounds[i][2] + zone_dims_dict.get('y_bottom'), zone_bounds[i][1] ] for i in range(len(zone_bounds)-2) 
+     [zone_bounds[i][0], zone_bounds[i][2], zone_bounds[i][1] ] for i in range(len(zone_bounds)-2) 
     ])
+  
     height = zone_dims_dict.get('y_length') #top and bottom of the zone
     # Extrude the pentagon to create the sides
     
-    vertices_top = vertices_base + np.array([0, 0, height])
+    vertices_top = vertices_base + np.array([0, 0, -height])
     print(vertices_base)
-    print((vertices_top))
+
     vertices = np.vstack([vertices_base, vertices_top])
 
     # Create the faces of the prism
@@ -348,114 +421,119 @@ def draw_pentagonal_prism(ax, zone_bounds,zone_dims_dict,center=(0, 0, 0)):
     # Plot the prism
     ax.add_collection3d(Poly3DCollection(faces, facecolors='cyan', linewidths=1, edgecolor = 'r', alpha = .6))
 
-
-
 ## MAIN EXECUTION BLOCK
 
-# import calibration matrix
-#TODO:add the script to the folder
-mtx = np.load("Andrew_camera_matrix.npy")  
-fx = mtx[0][0]
-fy = mtx[1][1]
-cx = mtx[0][2]
-cy = mtx[1][2]
+def generate_result(video_path, model_path='bestwpingpong.pt', calibration_matrix_path="Andrew_camera_matrix.npy"):
+    # Load the calibration matrix
+    mtx = np.load(calibration_matrix_path)  
+    fx = mtx[0][0]
+    fy = mtx[1][1]
+    cx = mtx[0][2]
+    cy = mtx[1][2]
 
-# Load the model
-#TODO:add the model to the folder
-model = YOLO('bestwpingpong.pt') 
+    # Load the model
+    model = YOLO(model_path) 
 
-cap = cv2.VideoCapture('Strike zone overlay/please_work/IMG_5296.MOV') #Read in pitch from folder
-frame_list = []  #List where we will store each frame of the video
-while(cap.isOpened()): 
-      
-# Capture frame-by-frame 
-    ret, frame = cap.read() 
-    if ret == True: 
-    # Display the resulting frame 
-#         cv2.imshow('Frame', frame) 
-        frame_list.append(frame)
-    # Press Q on keyboard to exit 
-        if cv2.waitKey(25) & 0xFF == ord('q'): 
+    cap = cv2.VideoCapture(video_path) #Read in pitch from folder
+    frame_list = []  #List where we will store each frame of the video
+    while(cap.isOpened()): 
+        
+    # Capture frame-by-frame 
+        ret, frame = cap.read() 
+        if ret == True: 
+        # Display the resulting frame 
+    #         cv2.imshow('Frame', frame) 
+            frame_list.append(frame)
+        # Press Q on keyboard to exit 
+            if cv2.waitKey(25) & 0xFF == ord('q'): 
+                break
+        else: 
             break
-  
 
-    else: 
-        break
+    # cap.release() 
+    # cv2.destroyAllWindows() 
 
-# the video capture object 
-cap.release() 
-  
-# Closes all the frames 
-cv2.destroyAllWindows() 
+    # Load in video and save an initial frame to be used in process_image
+    test_image = frame_list[35]
+    image_path = "static/results/validation_image.png"
+    cv2.imwrite(image_path, test_image)
 
-# Load in video and save an initial frame to be used in process_image
-test_image = frame_list[20]
-cv2.imwrite("Strike zone overlay/please_work/validation_image.png",test_image)
+    points = process_image(image_path, model, fx, fy, cx, cy)
 
-points = process_image("Strike zone overlay/please_work/validation_image.png")
-# print(len(points))
-# print(points)
+    # Reorder corner points of the strike zone based on homeplate
+    corners, point_order = (order_homeplate_points(test_image, points))
 
-# Reorder corner points of the strike zone based on homeplate
-corners, point_order = (order_homeplate_points(test_image, points))
+    # Append on a zone height
+    point_order.append((0,18,0)) #bottom border of the zone
+    point_order.append((0,38,0)) #top of the zone
 
-#need to append on a zone height
-point_order.append((0,10,0)) #bottom border of the zone
-point_order.append((0,30,0)) #top of the zone
+    expected_distances = np.array([11.8, 17, 8.5]) #convert from inches to meters
+    zone_dims_dict = build_zone(point_order)
+    print("start")
+    baseball_position = process_image_baseball(image_path, model, fx, fy, cx, cy)[0]
+    result = [check_strike(baseball_position,point_order)]
+    print("1")
 
-expected_distances = np.array([11.8, 17, 8.5]) #convert from inches to meters
-zone_dims_dict = build_zone(point_order,expected_distances)
+    ball_positions = [baseball_position]
+    print("2")
 
-fig = plt.figure()
-ax = fig.add_subplot(111, projection='3d')
-height = zone_dims_dict.get('y_length')
-center = (point_order[0][0] ,point_order[0][2] + zone_dims_dict.get('z_length_back'),point_order[0][1] + zone_dims_dict.get('y_length')*.5  )
-print(center)
-draw_pentagonal_prism(ax = ax,zone_bounds=point_order,zone_dims_dict=zone_dims_dict,center=center)
-x_lim = zone_dims_dict.get('x_length_front') + center[0]
-y_lim = (zone_dims_dict.get('z_length_front'))+ (zone_dims_dict.get('z_length_back'))
-print(y_lim)
-# Set axis limits
-ax.set_xlim([-15, 5])
-ax.set_ylim([70, 90])
-ax.set_zlim([-2*height, 2*height])
-ax.set_xlabel('x')
-ax.set_ylabel('y')
-ax.set_zlabel('z')
-#Create a legend with a color box
-strike_patch = mpatches.Patch(color='red', label='Strike')
-ball_patch = mpatches.Patch(color='blue', label='Ball')
-plt.legend(handles=[strike_patch, ball_patch], loc='upper left', framealpha=0.5, frameon=True)
+    fig = plt.figure()
+    ax = fig.add_subplot(111, projection='3d')
+    height = zone_dims_dict.get('y_length')
+    center = (point_order[0][0] ,point_order[0][2] + zone_dims_dict.get('z_length_back'),point_order[0][1] + zone_dims_dict.get('y_length')*.5  )
+    print(center)
+    print("3")
+    draw_pentagonal_prism(ax = ax,zone_bounds=point_order,zone_dims_dict=zone_dims_dict,center=center)
+    x_lim = zone_dims_dict.get('x_length_front') + center[0]
+    y_lim = (zone_dims_dict.get('z_length_front'))+ (zone_dims_dict.get('z_length_back'))
+    print(y_lim)
+    print("4")
+    # Set axis limits
+    ax.set_xlim([-15, 5])
+    ax.set_ylim([70,100])
+    ax.set_zlim([-2*height, 2*height])
+    ax.set_xlabel('x')
+    ax.set_ylabel('y')
+    ax.set_zlabel('z')
+    print("5")
+    #Create a legend with a color box
+    strike_patch = mpatches.Patch(color='red', label='Strike')
+    ball_patch = mpatches.Patch(color='blue', label='Ball')
+    plt.legend(handles=[strike_patch, ball_patch], loc='upper left', framealpha=0.5, frameon=True)
+    print("6")
+    for i in range(len(ball_positions)):
+        if result[i] == 1:
+            ax.scatter(ball_positions[i][0],ball_positions[i][2],ball_positions[i][1],c = 'r',s=200)
+        else:
+            ax.scatter(ball_positions[i][0],ball_positions[i][2],ball_positions[i][1],c = 'b',s=200)
+    #         ax.scatter(1.8,80,0,c = 'b',s=200)
 
-# for i in range(len(ball_positions)):
-#     if result[i] == 1:
-#         ax.scatter(ball_positions[i][0],ball_positions[i][2],ball_positions[i][1],c = 'r',s=200)
-#     else:
-#         ax.scatter(ball_positions[i][0],ball_positions[i][2],ball_positions[i][1],c = 'b',s=200)
+    # Enable interactive mode
+    # plt.ion()
 
-# Enable interactive mode
-plt.ion()
+    # # Show the plot
+    # plt.show()
 
-# Show the plot
-plt.show()
+    # # Pause to allow user interaction
+    # plt.pause(0.1)
 
-# Pause to allow user interaction
-plt.pause(0.1)
+    # # Disable interactive mode
+    # plt.ioff()
 
-# Disable interactive mode
-plt.ioff()
+    # # Display the plot
+    # plt.show()
 
-# Display the plot
-plt.show()
+    # Save the interactive plot as an HTML file in the static folder
+    plot_path = 'static/results/interactive_plot.html'
+    mpld3.save_html(fig, plot_path)
 
-# plt.rcParams['savefig.facecolor']='white'
-# plt.savefig('3d_strikezone_image',bbox_inches="tight")
+    # plt.rcParams['savefig.facecolor']='white'
+    # plt.savefig(plot_path,bbox_inches="tight")
 
-# TODO: return the plot_path to app.py so it can return it as result.html
-# Save the interactive plot as an HTML file in the static folder
-plot_path = 'static/results/interactive_plot.html'
-mpld3.save_html(fig, plot_path)
+    
 
+    # Return the path to the generated HTML plot
+    return plot_path
 
 
 # Process the video and return the processed video's path
