@@ -20,6 +20,7 @@ import ipywidgets as widgets
 import sys
 import os
 import mpld3
+import plotly.graph_objects as go
 
 
 ## DEFINE FUNCTIONS 
@@ -392,35 +393,45 @@ def check_strike(ball_position, zone_bounds):
     strike = 0
     return strike
 
-# Draw the prism of the strike zone overlay
-def draw_pentagonal_prism(ax, zone_bounds,zone_dims_dict,center=(0, 0, 0)):
-    # Define the vertices of a regular pentagon
-    size = 1
-    # vertices_base = np.array([
-    #      [size * np.cos(2 * np.pi * i / 5), size * np.sin(2 * np.pi * i / 5), 0] for i in range(5)
-    #  ])
+def draw_pentagonal_prism(zone_bounds, zone_dims_dict, center=(0, 0, 0)):
     vertices_base = np.array([
-     [zone_bounds[i][0], zone_bounds[i][2], zone_bounds[i][1] ] for i in range(len(zone_bounds)-2) 
+        [zone_bounds[i][0], zone_bounds[i][2], zone_bounds[i][1]] for i in range(len(zone_bounds) - 2)
     ])
-  
-    height = zone_dims_dict.get('y_length') #top and bottom of the zone
-    # Extrude the pentagon to create the sides
-    
-    vertices_top = vertices_base + np.array([0, 0, -height])
-    print(vertices_base)
 
+    height = zone_dims_dict.get('y_length')
+    vertices_top = vertices_base + np.array([0, 0, -height])
     vertices = np.vstack([vertices_base, vertices_top])
 
+    # Extract x, y, z coordinates for each vertex
+    x, y, z = np.array(vertices).T
+
+    i = []
+    j = []
+    k = []
+
     # Create the faces of the prism
-    faces = [
-        [vertices_base[i], vertices_base[(i + 1) % 5], vertices_top[(i + 1) % 5], vertices_top[i]] for i in range(5)
-    ]
-    faces.append(vertices_base)
-    faces.append(vertices_top)
+    for m in range(len(vertices_base)):
+        i.append(m)
+        j.append((m + 1) % len(vertices_base))
+        k.append(len(vertices_base) + (m + 1) % len(vertices_base))
 
-    # Plot the prism
-    ax.add_collection3d(Poly3DCollection(faces, facecolors='cyan', linewidths=1, edgecolor = 'r', alpha = .6))
+        i.append(m)
+        j.append(len(vertices_base) + (m + 1) % len(vertices_base))
+        k.append(len(vertices_base) + m)
 
+    # Top face
+    i.extend(range(len(vertices_base)))
+    j.extend([(m + 1) % len(vertices_base) for m in range(len(vertices_base))])
+    k.extend([len(vertices_base)] * len(vertices_base))
+
+    # Bottom face
+    i.extend([len(vertices_base) + m for m in range(len(vertices_base))])
+    j.extend([len(vertices_base) + (m + 1) % len(vertices_base) for m in range(len(vertices_base))])
+    k.extend([2 * len(vertices_base) - 1] * len(vertices_base))
+
+    prism_trace = go.Mesh3d(x=x, y=y, z=z, color='cyan', opacity=0.6, i=i, j=j, k=k, name='Prism')
+
+    return prism_trace
 ## MAIN EXECUTION BLOCK
 
 def generate_result(video_path, model_path='bestwpingpong.pt', calibration_matrix_path="Andrew_camera_matrix.npy"):
@@ -454,7 +465,7 @@ def generate_result(video_path, model_path='bestwpingpong.pt', calibration_matri
     # cv2.destroyAllWindows() 
 
     # Load in video and save an initial frame to be used in process_image
-    test_image = frame_list[35]
+    test_image = frame_list[40]
     image_path = "static/results/validation_image.png"
     cv2.imwrite(image_path, test_image)
 
@@ -477,60 +488,29 @@ def generate_result(video_path, model_path='bestwpingpong.pt', calibration_matri
     ball_positions = [baseball_position]
     print("2")
 
-    fig = plt.figure()
-    ax = fig.add_subplot(111, projection='3d')
-    height = zone_dims_dict.get('y_length')
     center = (point_order[0][0] ,point_order[0][2] + zone_dims_dict.get('z_length_back'),point_order[0][1] + zone_dims_dict.get('y_length')*.5  )
     print(center)
-    print("3")
-    draw_pentagonal_prism(ax = ax,zone_bounds=point_order,zone_dims_dict=zone_dims_dict,center=center)
-    x_lim = zone_dims_dict.get('x_length_front') + center[0]
-    y_lim = (zone_dims_dict.get('z_length_front'))+ (zone_dims_dict.get('z_length_back'))
-    print(y_lim)
-    print("4")
-    # Set axis limits
-    ax.set_xlim([-15, 5])
-    ax.set_ylim([70,100])
-    ax.set_zlim([-2*height, 2*height])
-    ax.set_xlabel('x')
-    ax.set_ylabel('y')
-    ax.set_zlabel('z')
-    print("5")
-    #Create a legend with a color box
-    strike_patch = mpatches.Patch(color='red', label='Strike')
-    ball_patch = mpatches.Patch(color='blue', label='Ball')
-    plt.legend(handles=[strike_patch, ball_patch], loc='upper left', framealpha=0.5, frameon=True)
-    print("6")
+    prism_trace = draw_pentagonal_prism(zone_bounds=point_order, zone_dims_dict=zone_dims_dict, center=center)
+    fig = go.Figure(data=[prism_trace])
+
+    # Update layout
+    fig.update_layout(scene=dict(
+        xaxis=dict(title='x', range=[-15, 5]),
+        yaxis=dict(title='y', range=[70, 100]),
+        zaxis=dict(title='z', range=[-2 * zone_dims_dict['y_length'], 2 * zone_dims_dict['y_length']])
+    ))
+
     for i in range(len(ball_positions)):
-        if result[i] == 1:
-            ax.scatter(ball_positions[i][0],ball_positions[i][2],ball_positions[i][1],c = 'r',s=200)
-        else:
-            ax.scatter(ball_positions[i][0],ball_positions[i][2],ball_positions[i][1],c = 'b',s=200)
-    #         ax.scatter(1.8,80,0,c = 'b',s=200)
+        color = 'red' if result[i] == 1 else 'blue'
+        fig.add_trace(go.Scatter3d(x=[ball_positions[i][0]], y=[ball_positions[i][2]], z=[ball_positions[i][1]], mode='markers', marker=dict(color=color, size=10)))
 
-    # Enable interactive mode
-    # plt.ion()
+    # Add legend
+    fig.add_trace(go.Scatter3d(x=[None], y=[None], z=[None], mode='markers', marker=dict(color='red', size=10), name='Strike'))
+    fig.add_trace(go.Scatter3d(x=[None], y=[None], z=[None], mode='markers', marker=dict(color='blue', size=10), name='Ball'))
 
-    # # Show the plot
-    # plt.show()
-
-    # # Pause to allow user interaction
-    # plt.pause(0.1)
-
-    # # Disable interactive mode
-    # plt.ioff()
-
-    # # Display the plot
-    # plt.show()
-
-    # Save the interactive plot as an HTML file in the static folder
+    # Save the interactive plot as an HTML file
     plot_path = 'static/results/interactive_plot.html'
-    mpld3.save_html(fig, plot_path)
-
-    # plt.rcParams['savefig.facecolor']='white'
-    # plt.savefig(plot_path,bbox_inches="tight")
-
-    
+    fig.write_html(plot_path)
 
     # Return the path to the generated HTML plot
     return plot_path
